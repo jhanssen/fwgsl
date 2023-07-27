@@ -33,8 +33,24 @@ return Module;
                     twgsl._free(addr);
                     return wgsl;
                   };
+                  var entries = [];
+                  var convertWGSL2SpirV = (code) => {
+                      entries.splice(0, entries.length);
+                      if (!twgsl._return_entrypoint_callback) {
+                          twgsl._return_entrypoint_callback = (stage, data, length) => {
+                              const buffer = twgsl.HEAPU8.subarray(data, data + length);
+                              entries.push(stage, buffer);
+                          };
+                      }
+                      let addr = twgsl._malloc(code.length);
+                      twgsl.HEAPU32.set(code, addr / 4);
+                      twgsl._wgsl_to_spirv(addr, code.length);
+                      twgsl._free(addr);
+                      return entries;
+                  };
                   resolve({
-                    convertSpirV2WGSL: convertSpirV2WGSL,
+                      convertSpirV2WGSL: convertSpirV2WGSL,
+                      convertWGSL2SpirV: convertWGSL2SpirV
                   });
               },
           });
