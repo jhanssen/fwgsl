@@ -1,16 +1,47 @@
 #include <tint/tint.h>
 
+#include <cstdlib>
 #include <array>
 #include <iostream>
 
 extern "C"
 {
 void spirv_to_wgsl(const void* bytes, int length);
-void wgsl_to_spirv(const void* bytes, int length);
+void wgsl_to_spirv(const void* fn, int fnlen, const void* bytes, int bytelen);
     
 // Callback to JavaScript
 extern void return_string(const void* data, int length);
 extern void return_entrypoint(int stage, const void* data, int length);
+extern void return_error(const void* data, int length);
+}
+
+static inline const char* convertMessageType(tint::diag::Severity severity)
+{
+    switch (severity) {
+    case tint::diag::Severity::Note:
+        return "note";
+    case tint::diag::Severity::Warning:
+        return "warning";
+    case tint::diag::Severity::Error:
+        return "error";
+    case tint::diag::Severity::InternalCompilerError:
+        return "internal_error";
+    case tint::diag::Severity::Fatal:
+        return "fatal";
+    }
+    abort();
+}
+
+static inline std::string formatTintDiag(const tint::diag::Diagnostic& diag)
+{
+    char buf[16384];
+    snprintf(buf, sizeof(buf), "%s: %s at %s:%zu:%zu",
+             convertMessageType(diag.severity),
+             diag.message.c_str(),
+             diag.source.file ? diag.source.file->path.c_str() : "<no filename>",
+             diag.source.range.begin.line,
+             diag.source.range.begin.column);
+    return std::string(buf);
 }
 
 void spirv_to_wgsl(const void* bytes, int length) {
@@ -20,9 +51,16 @@ void spirv_to_wgsl(const void* bytes, int length) {
 
     tint::Program program{tint::reader::spirv::Parse(spirv)};
 
-    for (const auto& message : program.Diagnostics())
-    {
-        std::cout << message.message << std::endl << std::endl;
+    if (!program.IsValid()) {
+        std::string msg;
+        for (const auto& message : program.Diagnostics())
+        {
+            if (!msg.empty())
+                msg += "\n";
+            msg += formatTintDiag(message);
+        }
+        return_error(msg.data(), msg.size());
+        return;
     }
     
     tint::writer::wgsl::Options options{};
@@ -31,13 +69,33 @@ void spirv_to_wgsl(const void* bytes, int length) {
     return_string(result.wgsl.data(), result.wgsl.size());
 }
 
-void wgsl_to_spirv(const void* bytes, int length) {
+void wgsl_to_spirv(const void* fn, int fnlen, const void* bytes, int bytelen) {
     std::string wgsl{};
-    wgsl.resize(length);
-    std::memcpy(&wgsl[0], bytes, length);
+    wgsl.resize(bytelen);
+    std::memcpy(&wgsl[0], bytes, bytelen);
 
-    tint::Source::File sourceFile("filename", wgsl);
+    std::string filename;
+    if (fnlen > 0) {
+        filename.resize(fnlen);
+        std::memcpy(&filename[0], fn, fnlen);
+    } else {
+        filename = "<no filename>";
+    }
+
+    tint::Source::File sourceFile(filename, wgsl);
     auto program = tint::reader::wgsl::Parse(&sourceFile);
+
+    if (!program.IsValid()) {
+        std::string msg;
+        for (const auto& message : program.Diagnostics())
+        {
+            if (!msg.empty())
+                msg += "\n";
+            msg += formatTintDiag(message);
+        }
+        return_error(msg.data(), msg.size());
+        return;
+    }
 
     tint::inspector::Inspector inspector(&program);
     const auto& entryPoints = inspector.GetEntryPoints();
@@ -50,10 +108,14 @@ void wgsl_to_spirv(const void* bytes, int length) {
 
         auto out = transform_manager.Run(&program, std::move(transform_inputs));
         if (!out.program.IsValid()) {
-            for (const auto& message : program.Diagnostics())
+            std::string msg;
+            for (const auto& message : out.program.Diagnostics())
             {
-                std::cout << message.message << std::endl << std::endl;
+                if (!msg.empty())
+                    msg += "\n";
+                msg += formatTintDiag(message);
             }
+            return_error(msg.data(), msg.size());
             return;
         }
 
@@ -66,7 +128,7 @@ void wgsl_to_spirv(const void* bytes, int length) {
         // generate spirv from wgsl
         auto result = tint::writer::spirv::Generate(&out.program, options);
         if (!result.success) {
-            std::cout << result.error << std::endl << std::endl;
+            return_error(result.error.data(), result.error.size());
             return;
         }
 

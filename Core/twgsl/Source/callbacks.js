@@ -9,5 +9,8 @@ mergeInto(LibraryManager.library, {
         // Requires this handler function to be defined. Defining it is the responsibility
         // of whoever calls into the WASM.
         Module._return_entrypoint_callback(stage, data, length);
+    },
+    return_error: function(data, length) {
+        Module._return_error_callback(data, length);
     }
 });
