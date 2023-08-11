@@ -132,6 +132,6 @@ void wgsl_to_spirv(const void* fn, int fnlen, const void* bytes, int bytelen) {
             return;
         }
 
-        return_entrypoint(static_cast<int>(entryPoint.stage), result.spirv.data(), result.spirv.size());
+        return_entrypoint(static_cast<int>(entryPoint.stage), result.spirv.data(), result.spirv.size() * sizeof(uint32_t));
     }
 }
