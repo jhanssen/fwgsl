@@ -72,7 +72,7 @@ public:
 void Transpiler::wgslToSpirv(const std::string& filename, const std::string& wgsl)
 {
     tint::Source::File sourceFile(filename, wgsl);
-    auto program = tint::reader::wgsl::Parse(&sourceFile);
+    auto program = tint::wgsl::reader::Parse(&sourceFile);
 
     mError = {};
     mEntryPoints.clear();
@@ -92,16 +92,16 @@ void Transpiler::wgslToSpirv(const std::string& filename, const std::string& wgs
     tint::inspector::Inspector inspector(&program);
     const auto& entryPoints = inspector.GetEntryPoints();
     for (const auto& entryPoint : entryPoints) {
-        tint::transform::Manager transform_manager;
-        tint::transform::DataMap transform_inputs;
+        tint::ast::transform::Manager transform_manager;
+        tint::ast::transform::DataMap transform_inputs, transform_outputs;
 
-        transform_manager.append(std::make_unique<tint::transform::SingleEntryPoint>());
-        transform_inputs.Add<tint::transform::SingleEntryPoint::Config>(entryPoint.name);
+        transform_manager.append(std::make_unique<tint::ast::transform::SingleEntryPoint>());
+        transform_inputs.Add<tint::ast::transform::SingleEntryPoint::Config>(entryPoint.name);
 
-        auto out = transform_manager.Run(&program, std::move(transform_inputs));
-        if (!out.program.IsValid()) {
+        auto outProgram = transform_manager.Run(&program, std::move(transform_inputs), transform_outputs);
+        if (!outProgram.IsValid()) {
             std::string msg;
-            for (const auto& message : out.program.Diagnostics())
+            for (const auto& message : outProgram.Diagnostics())
             {
                 if (!msg.empty())
                     msg += "\n";
@@ -111,20 +111,21 @@ void Transpiler::wgslToSpirv(const std::string& filename, const std::string& wgs
             return;
         }
 
-        tint::writer::spirv::Options options;
+        tint::spirv::writer::Options options;
         options.emit_vertex_point_size = true;
         options.disable_workgroup_init = true;
         options.disable_robustness = true;
         // options.clamp_frag_depth = true;
 
         // generate spirv from wgsl
-        auto result = tint::writer::spirv::Generate(&out.program, options);
-        if (!result.success) {
-            mError = std::move(result.error);
+        auto result = tint::spirv::writer::Generate(&outProgram, options);
+        if (!result) {
+            mError = result.Failure();
             return;
         }
+        auto output = result.Move();
 
-        mEntryPoints.push_back(EntryPoint(static_cast<int>(entryPoint.stage), std::move(result.spirv)));
+        mEntryPoints.push_back(EntryPoint(static_cast<int>(entryPoint.stage), std::move(output.spirv)));
     }
 }
 
