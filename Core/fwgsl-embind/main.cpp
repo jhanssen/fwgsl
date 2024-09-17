@@ -39,7 +39,7 @@ using namespace emscripten;
 class FragColorInputToInputAttachment final : public tint::Castable<FragColorInputToInputAttachment, tint::ast::transform::Transform>
 {
 public:
-    FragColorInputToInputAttachment(std::optional<std::vector<uint32_t>>* convertedColorInput)
+    FragColorInputToInputAttachment(std::vector<uint32_t>* convertedColorInput)
         : mConvertedColorInput(convertedColorInput)
     {
     }
@@ -85,10 +85,7 @@ public:
                                 }
                                 idx = colorAttr->expr->As<tint::ast::IntLiteralExpression>()->value;
 
-                                if (!mConvertedColorInput->has_value()) {
-                                    *mConvertedColorInput = std::vector<uint32_t>();
-                                }
-                                mConvertedColorInput->value().push_back(idx);
+                                mConvertedColorInput->push_back(idx);
 
                                 // we need to rewrite this param
                                 //needsRewrite = true;
@@ -154,7 +151,7 @@ public:
     }
 
 private:
-    std::optional<std::vector<uint32_t>>* mConvertedColorInput;
+    std::vector<uint32_t>* mConvertedColorInput;
 };
 
 TINT_INSTANTIATE_TYPEINFO(FragColorInputToInputAttachment);
@@ -207,11 +204,12 @@ public:
     std::string error() const { return mError.value(); }
     uint32_t numEntryPoints() const { return mEntryPoints.size(); }
     EntryPoint entryPoint(uint32_t idx) const { return mEntryPoints[idx]; }
-    std::optional<std::vector<uint32_t>> convertedColorInputs() const { return mConvertedColorInputs; }
+    uint32_t numConvertedColorInputs() const { return mConvertedColorInputs.size(); }
+    uint32_t convertedColorInput(uint32_t idx) const { return mConvertedColorInputs[idx]; }
 
     std::optional<std::string> mError;
     std::vector<EntryPoint> mEntryPoints;
-    std::optional<std::vector<uint32_t>> mConvertedColorInputs;
+    std::vector<uint32_t> mConvertedColorInputs;
 };
 
 void Transpiler::wgslToSpirv(const std::string& filename, const std::string& wgsl)
@@ -303,7 +301,8 @@ EMSCRIPTEN_BINDINGS(fwgslwasm) {
     .function("wgslToSpirv", &Transpiler::wgslToSpirv)
     .function("hasError", &Transpiler::hasError)
     .function("error", &Transpiler::error)
-    .function("convertedColorInputs", &Transpiler::convertedColorInputs)
+    .function("numConvertedColorInputs", &Transpiler::numConvertedColorInputs)
+    .function("convertedColorInput", &Transpiler::convertedColorInput)
     .function("numEntryPoints", &Transpiler::numEntryPoints)
     .function("entryPoint", &Transpiler::entryPoint);
     class_<EntryPoint>("EntryPoint")
