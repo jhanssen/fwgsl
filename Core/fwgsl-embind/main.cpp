@@ -39,7 +39,7 @@ using namespace emscripten;
 class FragColorInputToInputAttachment final : public tint::Castable<FragColorInputToInputAttachment, tint::ast::transform::Transform>
 {
 public:
-    FragColorInputToInputAttachment(bool* convertedColorInput)
+    FragColorInputToInputAttachment(std::optional<std::vector<uint32_t>>* convertedColorInput)
         : mConvertedColorInput(convertedColorInput)
     {
     }
@@ -76,7 +76,7 @@ public:
                                 const auto& paramName = param->name->symbol.Name();
                                 const auto& paramType = param->type.expr->identifier->symbol.Name();
 
-                                uint64_t idx = 0;
+                                uint32_t idx = 0;
 
                                 const auto& colorAttr = attr->As<tint::ast::ColorAttribute>();
                                 if (!colorAttr->expr->Is<tint::ast::IntLiteralExpression>()) {
@@ -85,13 +85,17 @@ public:
                                 }
                                 idx = colorAttr->expr->As<tint::ast::IntLiteralExpression>()->value;
 
+                                if (!mConvertedColorInput->has_value()) {
+                                    *mConvertedColorInput = std::vector<uint32_t>();
+                                }
+                                mConvertedColorInput->value().push_back(idx);
+
                                 // we need to rewrite this param
                                 //needsRewrite = true;
                                 ctx.Remove(func->params, param);
 
                                 if (!inputEnabled) {
                                     inputEnabled = true;
-                                    *mConvertedColorInput = true;
                                     b.AST().AddEnable(b.Enable(tint::wgsl::Extension::kChromiumInternalInputAttachments));
                                 }
 
@@ -150,7 +154,7 @@ public:
     }
 
 private:
-    bool* mConvertedColorInput;
+    std::optional<std::vector<uint32_t>>* mConvertedColorInput;
 };
 
 TINT_INSTANTIATE_TYPEINFO(FragColorInputToInputAttachment);
@@ -202,12 +206,12 @@ public:
     bool hasError() const { return mError.has_value(); }
     std::string error() const { return mError.value(); }
     uint32_t numEntryPoints() const { return mEntryPoints.size(); }
-    bool convertedColorInputs() const { return mConvertedColorInputs; }
     EntryPoint entryPoint(uint32_t idx) const { return mEntryPoints[idx]; }
+    std::optional<std::vector<uint32_t>> convertedColorInputs() const { return mConvertedColorInputs; }
 
     std::optional<std::string> mError;
     std::vector<EntryPoint> mEntryPoints;
-    bool mConvertedColorInputs = false;
+    std::optional<std::vector<uint32_t>> mConvertedColorInputs;
 };
 
 void Transpiler::wgslToSpirv(const std::string& filename, const std::string& wgsl)
@@ -219,7 +223,7 @@ void Transpiler::wgslToSpirv(const std::string& filename, const std::string& wgs
 
     mError = {};
     mEntryPoints.clear();
-    mConvertedColorInputs = false;
+    mConvertedColorInputs = {};
 
     if (!program.IsValid()) {
         std::string msg;
