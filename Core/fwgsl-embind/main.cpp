@@ -68,6 +68,8 @@ public:
 void Transpiler::wgslToSpirv(const std::string& filename, const std::string& wgsl)
 {
     tint::Source::File sourceFile(filename, wgsl);
+    tint::wgsl::reader::Options programOptions = {};
+    programOptions.allowed_features.extensions.insert(tint::wgsl::Extension::kChromiumExperimentalFramebufferFetch);
     auto program = tint::wgsl::reader::Parse(&sourceFile);
 
     mError = {};
