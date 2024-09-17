@@ -21,10 +21,6 @@ static inline const char* convertMessageType(tint::diag::Severity severity)
         return "warning";
     case tint::diag::Severity::Error:
         return "error";
-    case tint::diag::Severity::InternalCompilerError:
-        return "internal_error";
-    case tint::diag::Severity::Fatal:
-        return "fatal";
     }
     abort();
 }
@@ -32,9 +28,9 @@ static inline const char* convertMessageType(tint::diag::Severity severity)
 static inline std::string formatTintDiag(const tint::diag::Diagnostic& diag)
 {
     char buf[16384];
-    snprintf(buf, sizeof(buf), "%s: %s at %s:%zu:%zu",
+    snprintf(buf, sizeof(buf), "%s: %s at %s:%u:%u",
              convertMessageType(diag.severity),
-             diag.message.c_str(),
+             diag.message.Plain().c_str(),
              diag.source.file ? diag.source.file->path.c_str() : "<no filename>",
              diag.source.range.begin.line,
              diag.source.range.begin.column);
@@ -89,7 +85,7 @@ void Transpiler::wgslToSpirv(const std::string& filename, const std::string& wgs
         return;
     }
 
-    tint::inspector::Inspector inspector(&program);
+    tint::inspector::Inspector inspector(program);
     const auto& entryPoints = inspector.GetEntryPoints();
     for (const auto& entryPoint : entryPoints) {
         tint::ast::transform::Manager transform_manager;
@@ -98,11 +94,23 @@ void Transpiler::wgslToSpirv(const std::string& filename, const std::string& wgs
         transform_manager.append(std::make_unique<tint::ast::transform::SingleEntryPoint>());
         transform_inputs.Add<tint::ast::transform::SingleEntryPoint::Config>(entryPoint.name);
 
-        auto outProgram = transform_manager.Run(&program, std::move(transform_inputs), transform_outputs);
+        auto outProgram = transform_manager.Run(program, std::move(transform_inputs), transform_outputs);
         if (!outProgram.IsValid()) {
             std::string msg;
             for (const auto& message : outProgram.Diagnostics())
             {
+                if (!msg.empty())
+                    msg += "\n";
+                msg += formatTintDiag(message);
+            }
+            mError = std::move(msg);
+            return;
+        }
+
+        auto ir = tint::wgsl::reader::ProgramToLoweredIR(outProgram);
+        if (ir != tint::Success) {
+            std::string msg;
+            for (const auto& message : ir.Failure().reason) {
                 if (!msg.empty())
                     msg += "\n";
                 msg += formatTintDiag(message);
@@ -118,9 +126,15 @@ void Transpiler::wgslToSpirv(const std::string& filename, const std::string& wgs
         // options.clamp_frag_depth = true;
 
         // generate spirv from wgsl
-        auto result = tint::spirv::writer::Generate(&outProgram, options);
-        if (!result) {
-            mError = result.Failure();
+        auto result = tint::spirv::writer::Generate(ir.Get(), options);
+        if (result != tint::Success) {
+            std::string msg;
+            for (const auto& message : result.Failure().reason) {
+                if (!msg.empty())
+                    msg += "\n";
+                msg += formatTintDiag(message);
+            }
+            mError = std::move(msg);
             return;
         }
         auto output = result.Move();
