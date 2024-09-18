@@ -39,6 +39,14 @@ using namespace emscripten;
 class FragColorInputToInputAttachment final : public tint::Castable<FragColorInputToInputAttachment, tint::ast::transform::Transform>
 {
 public:
+    /// Configuration options for the transform
+    struct Config final : public Castable<Config, tint::ast::transform::Data> {
+        explicit Config(uint32_t group);
+
+        uint32_t group = 0;
+        TINT_REFLECT(Config, group);
+    };
+
     FragColorInputToInputAttachment(std::vector<uint32_t>* convertedColorInput)
         : mConvertedColorInput(convertedColorInput)
     {
@@ -51,6 +59,12 @@ public:
     {
         tint::ProgramBuilder b;
         tint::program::CloneContext ctx{&b, &src, /* auto_clone_symbols */ true};
+
+        auto* cfg = inputs.Get<Config>();
+        if (cfg == nullptr) {
+            b.Diagnostics().AddError(tint::Source{}) << "missing transform data for " << TypeInfo().name;
+            return tint::resolver::Resolve(b);
+        }
 
         bool inputEnabled = false;
 
@@ -104,7 +118,7 @@ public:
                                                               static_cast<const tint::ast::Expression*>(nullptr),                           // declared_access
                                                               static_cast<const tint::ast::Expression*>(nullptr),                           // initializer
                                                               tint::Vector<const tint::ast::Attribute*, 2>({
-                                                                      b.Group(tint::core::u32(idx)),
+                                                                      b.Group(tint::core::u32(cfg->group)),
                                                                       b.Binding(tint::core::u32(idx)),
                                                                       b.InputAttachmentIndex(tint::core::u32(idx))
                                                                   })
@@ -154,7 +168,10 @@ private:
     std::vector<uint32_t>* mConvertedColorInput;
 };
 
+FragColorInputToInputAttachment::Config::Config(uint32_t grp) : group(grp) {}
+
 TINT_INSTANTIATE_TYPEINFO(FragColorInputToInputAttachment);
+TINT_INSTANTIATE_TYPEINFO(FragColorInputToInputAttachment::Config);
 
 static inline const char* convertMessageType(tint::diag::Severity severity)
 {
@@ -198,7 +215,7 @@ class Transpiler
 public:
     Transpiler() { }
 
-    void wgslToSpirv(const std::string& filename, const std::string& wgsl);
+    void wgslToSpirv(const std::string& filename, const std::string& wgsl, std::optional<uint32_t> colorInputGroup = {});
 
     bool hasError() const { return mError.has_value(); }
     std::string error() const { return mError.value(); }
@@ -212,7 +229,7 @@ public:
     std::vector<uint32_t> mConvertedColorInputs;
 };
 
-void Transpiler::wgslToSpirv(const std::string& filename, const std::string& wgsl)
+void Transpiler::wgslToSpirv(const std::string& filename, const std::string& wgsl, std::optional<uint32_t> colorInputGroup)
 {
     tint::Source::File sourceFile(filename, wgsl);
     tint::wgsl::reader::Options programOptions = {};
@@ -245,6 +262,7 @@ void Transpiler::wgslToSpirv(const std::string& filename, const std::string& wgs
         transform_inputs.Add<tint::ast::transform::SingleEntryPoint::Config>(entryPoint.name);
 
         transform_manager.append(std::make_unique<FragColorInputToInputAttachment>(&mConvertedColorInputs));
+        transform_inputs.Add<FragColorInputToInputAttachment::Config>(colorInputGroup.value_or(0));
 
         auto outProgram = transform_manager.Run(program, std::move(transform_inputs), transform_outputs);
         if (!outProgram.IsValid()) {
