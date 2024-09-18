@@ -36,6 +36,7 @@
 
 using namespace emscripten;
 
+/*
 class FragColorInputToInputAttachment final : public tint::Castable<FragColorInputToInputAttachment, tint::ast::transform::Transform>
 {
 public:
@@ -58,7 +59,7 @@ public:
                               tint::ast::transform::DataMap& outputs) const override
     {
         tint::ProgramBuilder b;
-        tint::program::CloneContext ctx{&b, &src, /* auto_clone_symbols */ true};
+        tint::program::CloneContext ctx{&b, &src, true};
 
         auto* cfg = inputs.Get<Config>();
         if (cfg == nullptr) {
@@ -172,6 +173,7 @@ FragColorInputToInputAttachment::Config::Config(uint32_t grp) : group(grp) {}
 
 TINT_INSTANTIATE_TYPEINFO(FragColorInputToInputAttachment);
 TINT_INSTANTIATE_TYPEINFO(FragColorInputToInputAttachment::Config);
+*/
 
 static inline const char* convertMessageType(tint::diag::Severity severity)
 {
@@ -215,30 +217,31 @@ class Transpiler
 public:
     Transpiler() { }
 
-    void wgslToSpirv(const std::string& filename, const std::string& wgsl, std::optional<uint32_t> colorInputGroup = {});
+    void wgslToSpirv(const std::string& filename, const std::string& wgsl);//, std::optional<uint32_t> colorInputGroup = {});
 
     bool hasError() const { return mError.has_value(); }
     std::string error() const { return mError.value(); }
     uint32_t numEntryPoints() const { return mEntryPoints.size(); }
     EntryPoint entryPoint(uint32_t idx) const { return mEntryPoints[idx]; }
-    uint32_t numConvertedColorInputs() const { return mConvertedColorInputs.size(); }
-    uint32_t convertedColorInput(uint32_t idx) const { return mConvertedColorInputs[idx]; }
+    // uint32_t numConvertedColorInputs() const { return mConvertedColorInputs.size(); }
+    // uint32_t convertedColorInput(uint32_t idx) const { return mConvertedColorInputs[idx]; }
 
     std::optional<std::string> mError;
     std::vector<EntryPoint> mEntryPoints;
-    std::vector<uint32_t> mConvertedColorInputs;
+    //std::vector<uint32_t> mConvertedColorInputs;
 };
 
-void Transpiler::wgslToSpirv(const std::string& filename, const std::string& wgsl, std::optional<uint32_t> colorInputGroup)
+void Transpiler::wgslToSpirv(const std::string& filename, const std::string& wgsl)//, std::optional<uint32_t> colorInputGroup)
 {
     tint::Source::File sourceFile(filename, wgsl);
     tint::wgsl::reader::Options programOptions = {};
-    programOptions.allowed_features.extensions.insert(tint::wgsl::Extension::kChromiumExperimentalFramebufferFetch);
+    //programOptions.allowed_features.extensions.insert(tint::wgsl::Extension::kChromiumExperimentalFramebufferFetch);
+    programOptions.allowed_features.extensions.insert(tint::wgsl::Extension::kChromiumInternalInputAttachments);
     auto program = tint::wgsl::reader::Parse(&sourceFile, programOptions);
 
     mError = {};
     mEntryPoints.clear();
-    mConvertedColorInputs = {};
+    // mConvertedColorInputs = {};
 
     if (!program.IsValid()) {
         std::string msg;
@@ -261,8 +264,8 @@ void Transpiler::wgslToSpirv(const std::string& filename, const std::string& wgs
         transform_manager.append(std::make_unique<tint::ast::transform::SingleEntryPoint>());
         transform_inputs.Add<tint::ast::transform::SingleEntryPoint::Config>(entryPoint.name);
 
-        transform_manager.append(std::make_unique<FragColorInputToInputAttachment>(&mConvertedColorInputs));
-        transform_inputs.Add<FragColorInputToInputAttachment::Config>(colorInputGroup.value_or(0));
+        // transform_manager.append(std::make_unique<FragColorInputToInputAttachment>(&mConvertedColorInputs));
+        // transform_inputs.Add<FragColorInputToInputAttachment::Config>(colorInputGroup.value_or(0));
 
         auto outProgram = transform_manager.Run(program, std::move(transform_inputs), transform_outputs);
         if (!outProgram.IsValid()) {
@@ -319,11 +322,12 @@ EMSCRIPTEN_BINDINGS(fwgslwasm) {
     .function("wgslToSpirv", &Transpiler::wgslToSpirv)
     .function("hasError", &Transpiler::hasError)
     .function("error", &Transpiler::error)
-    .function("numConvertedColorInputs", &Transpiler::numConvertedColorInputs)
-    .function("convertedColorInput", &Transpiler::convertedColorInput)
+    // .function("numConvertedColorInputs", &Transpiler::numConvertedColorInputs)
+    // .function("convertedColorInput", &Transpiler::convertedColorInput)
     .function("numEntryPoints", &Transpiler::numEntryPoints)
     .function("entryPoint", &Transpiler::entryPoint);
     class_<EntryPoint>("EntryPoint")
     .function("stage", &EntryPoint::stage)
     .function("spirv", &EntryPoint::spirv);
+    //register_optional<uint32_t>();
 }
